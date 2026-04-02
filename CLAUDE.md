@@ -41,6 +41,12 @@ Always present required commands in a clear block at the end of your response:
 
 If no actions are required, explicitly state: "No additional commands needed."
 
+## Supabase CLI
+
+- **Always use the Supabase CLI** for any database work — migrations, type generation, schema push/pull.
+- The CLI is **not installed globally** on this machine. Always use `npx supabase`, never bare `supabase`.
+- Be proactive: generate migration files, push schema, and generate types on behalf of the user to minimise manual steps.
+
 ## Code Conventions
 
 - Use TypeScript strict mode.

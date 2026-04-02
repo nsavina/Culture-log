@@ -67,6 +67,22 @@ If the database schema changed, tell the user to regenerate types:
 npx supabase gen types typescript --project-id <project-id> > src/lib/supabase/database.types.ts
 ```
 
+## Supabase CLI
+
+- **Always use the Supabase CLI** for any database work (migrations, type generation, local dev, etc.).
+- The CLI is **not installed globally** — always invoke it via `npx supabase`, never `supabase`.
+- Use the CLI proactively to reduce manual steps for the user: generate migration files, push schema changes, pull remote schema, generate TypeScript types, etc.
+- When writing a migration, create it with `npx supabase migration new <name>` and write the SQL into the generated file, then push with `npx supabase db push`.
+
+Common commands:
+```bash
+npx supabase migration new <name>       # create a new migration file
+npx supabase db push                    # push local migrations to remote
+npx supabase db pull                    # pull remote schema to local
+npx supabase gen types typescript --project-id <id> > src/lib/supabase/database.types.ts
+npx supabase status                     # show local Supabase status
+```
+
 ## General Rules
 
 - Always use the App Router (`src/app/`) — never Pages Router.
