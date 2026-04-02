@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Routes that require authentication
+const PROTECTED_PREFIXES = ["/feed", "/entry", "/profile", "/settings"];
+
+function isProtectedRoute(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -32,8 +39,25 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // Refresh session if it exists
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+
+  // Redirect unauthenticated users from protected routes to login
+  if (!user && isProtectedRoute(pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  // Redirect authenticated users from login to feed
+  if (user && pathname === "/login") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/feed";
+    return NextResponse.redirect(url);
+  }
 
   return supabaseResponse;
 }
