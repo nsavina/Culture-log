@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getGroqClient } from "@/lib/groq";
 import { fetchCoverUrl } from "@/lib/covers";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { enrichRequestSchema } from "@/lib/validation";
 import type { EntryType } from "@/lib/types";
+
+const RATE_LIMIT = { limit: 10, windowMs: 60_000 };
 
 function getSystemPrompt(type: EntryType): string {
   const base = "You are a cultural knowledge assistant. Return ONLY valid JSON. If you don't know a value, omit the field. Do not invent data.";
@@ -52,23 +57,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = checkRateLimit(`enrich:${user.id}`, RATE_LIMIT);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests, slow down" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
   const groq = getGroqClient();
   if (!groq) {
     return NextResponse.json({ error: "AI unavailable — GROQ_API_KEY not configured" }, { status: 503 });
   }
 
-  const body = await request.json();
-  const { entryId, title, type, link, impression } = body as {
-    entryId: string;
-    title: string;
-    type: EntryType;
-    link?: string;
-    impression?: string;
-  };
-
-  if (!entryId || !title || !type) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const parsedBody = enrichRequestSchema.safeParse(body);
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      { error: "Invalid request body", details: z.flattenError(parsedBody.error).fieldErrors },
+      { status: 400 }
+    );
+  }
+  const { entryId, title, type, link, impression } = parsedBody.data;
 
   try {
     let userMessage = `Tell me about: "${title}" (${type})`;

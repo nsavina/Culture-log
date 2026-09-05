@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getGroqClient } from "@/lib/groq";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { parseLinkRequestSchema } from "@/lib/validation";
+
+const RATE_LIMIT = { limit: 10, windowMs: 60_000 };
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -15,17 +20,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = checkRateLimit(`parse-link:${user.id}`, RATE_LIMIT);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests, slow down" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } }
+    );
+  }
+
   const groq = getGroqClient();
   if (!groq) {
     return NextResponse.json({ error: "AI unavailable" }, { status: 503 });
   }
 
-  const body = await request.json();
-  const { url } = body as { url: string };
-
-  if (!url) {
-    return NextResponse.json({ error: "Missing URL" }, { status: 400 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const parsedBody = parseLinkRequestSchema.safeParse(body);
+  if (!parsedBody.success) {
+    return NextResponse.json(
+      { error: "Invalid request body", details: z.flattenError(parsedBody.error).fieldErrors },
+      { status: 400 }
+    );
+  }
+  const { url } = parsedBody.data;
 
   try {
     const completion = await groq.chat.completions.create({
